@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Table,
@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SignalIndicator } from './signal-indicator';
-import { Eye, Download, Search, Filter, FileDown, FileJson } from 'lucide-react';
+import { Eye, Download, Search, Filter, FileDown, FileJson, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import type { Device } from '@/lib/api/types';
@@ -42,6 +42,9 @@ interface DeviceTableProps {
   onPerPageChange: (per: number) => void;
 }
 
+type SortField = 'device_id' | 'alias' | 'signal' | 'network' | 'ip' | 'lastOnline' | 'location';
+type SortOrder = 'asc' | 'desc';
+
 export function DeviceTable({
   devices,
   total,
@@ -53,18 +56,27 @@ export function DeviceTable({
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [signalFilter, setSignalFilter] = useState<string>('all');
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
-  const filteredDevices = devices.filter((device) => {
-    const matchesSearch =
-      device.device_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (device.alias && device.alias.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesSignal = signalFilter === 'all' || device.signal === signalFilter;
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
-    return matchesSearch && matchesSignal;
-  });
-
-  const totalPages = Math.ceil(total / per);
+  const getSignalPriority = (signal?: string): number => {
+    switch (signal) {
+      case 'green': return 3;
+      case 'yellow': return 2;
+      case 'red': return 1;
+      case 'grey': return 0;
+      default: return -1;
+    }
+  };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
@@ -83,6 +95,75 @@ export function DeviceTable({
       return device.report.network.name;
     }
     return 'N/A';
+  };
+
+  const sortedAndFilteredDevices = useMemo(() => {
+    // First filter
+    let filtered = devices.filter((device) => {
+      const matchesSearch =
+        device.device_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (device.alias && device.alias.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+      const matchesSignal = signalFilter === 'all' || device.signal === signalFilter;
+
+      return matchesSearch && matchesSignal;
+    });
+
+    // Then sort
+    if (sortField) {
+      filtered = [...filtered].sort((a, b) => {
+        let aValue: any;
+        let bValue: any;
+
+        switch (sortField) {
+          case 'device_id':
+            aValue = a.device_id;
+            bValue = b.device_id;
+            break;
+          case 'alias':
+            aValue = a.alias || '';
+            bValue = b.alias || '';
+            break;
+          case 'signal':
+            aValue = getSignalPriority(a.signal);
+            bValue = getSignalPriority(b.signal);
+            break;
+          case 'network':
+            aValue = getNetworkType(a);
+            bValue = getNetworkType(b);
+            break;
+          case 'ip':
+            aValue = a.report?.ips?.[0] || '';
+            bValue = b.report?.ips?.[0] || '';
+            break;
+          case 'lastOnline':
+            aValue = a.lastOnline ? new Date(a.lastOnline).getTime() : 0;
+            bValue = b.lastOnline ? new Date(b.lastOnline).getTime() : 0;
+            break;
+          case 'location':
+            aValue = a.config?.location?.description || '';
+            bValue = b.config?.location?.description || '';
+            break;
+        }
+
+        if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [devices, searchTerm, signalFilter, sortField, sortOrder]);
+
+  const totalPages = Math.ceil(total / per);
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="h-4 w-4 ml-2 text-muted-foreground" />;
+    }
+    return sortOrder === 'asc' 
+      ? <ArrowUp className="h-4 w-4 ml-2" />
+      : <ArrowDown className="h-4 w-4 ml-2" />;
   };
 
   return (
@@ -120,11 +201,11 @@ export function DeviceTable({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => exportToCSV(filteredDevices, generateExportFilename('spine_devices', 'csv'))}>
+            <DropdownMenuItem onClick={() => exportToCSV(sortedAndFilteredDevices, generateExportFilename('spine_devices', 'csv'))}>
               <FileDown className="h-4 w-4 mr-2" />
               Als CSV exportieren
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => exportToJSON(filteredDevices, generateExportFilename('spine_devices', 'json'))}>
+            <DropdownMenuItem onClick={() => exportToJSON(sortedAndFilteredDevices, generateExportFilename('spine_devices', 'json'))}>
               <FileJson className="h-4 w-4 mr-2" />
               Als JSON exportieren
             </DropdownMenuItem>
@@ -136,18 +217,74 @@ export function DeviceTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Geräte-ID</TableHead>
-              <TableHead>Alias</TableHead>
-              <TableHead>Signal</TableHead>
-              <TableHead>Netzwerk</TableHead>
-              <TableHead>IP-Adresse</TableHead>
-              <TableHead>Letzter Kontakt</TableHead>
-              <TableHead>Standort</TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => handleSort('device_id')}
+              >
+                <div className="flex items-center">
+                  Geräte-ID
+                  <SortIcon field="device_id" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => handleSort('alias')}
+              >
+                <div className="flex items-center">
+                  Alias
+                  <SortIcon field="alias" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => handleSort('signal')}
+              >
+                <div className="flex items-center">
+                  Signal
+                  <SortIcon field="signal" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => handleSort('network')}
+              >
+                <div className="flex items-center">
+                  Netzwerk
+                  <SortIcon field="network" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => handleSort('ip')}
+              >
+                <div className="flex items-center">
+                  IP-Adresse
+                  <SortIcon field="ip" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => handleSort('lastOnline')}
+              >
+                <div className="flex items-center">
+                  Letzter Kontakt
+                  <SortIcon field="lastOnline" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => handleSort('location')}
+              >
+                <div className="flex items-center">
+                  Standort
+                  <SortIcon field="location" />
+                </div>
+              </TableHead>
               <TableHead className="text-right">Aktionen</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredDevices.map((device) => (
+            {sortedAndFilteredDevices.map((device) => (
               <TableRow
                 key={device.device_id}
                 className="cursor-pointer hover:bg-muted/50"

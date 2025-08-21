@@ -1,24 +1,17 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDevices } from '@/hooks/use-devices';
-import { spineApi } from '@/lib/api/client';
 import { EnhancedLiveStatsOptimized } from '@/components/monitoring/enhanced-live-stats-optimized';
 import { StatisticsCharts } from '@/components/monitoring/statistics-charts';
 import { 
   Cpu, 
-  Wifi, 
-  WifiOff, 
   Activity, 
-  AlertCircle,
   ArrowRight,
   TrendingUp,
-  TrendingDown,
   Map,
   BarChart3,
   Clock,
@@ -57,8 +50,8 @@ export default function DashboardPage() {
   const statusCounts = getStatusCounts();
   const totalDevices = parseInt(data?.total || '0');
   const onlineDevices = (statusCounts.green || 0) + (statusCounts.yellow || 0) + (statusCounts.red || 0);
-  const offlineDevices = statusCounts.grey || 0;
-  const onlinePercentage = totalDevices > 0 ? (onlineDevices / totalDevices) * 100 : 0;
+  // const offlineDevices = statusCounts.grey || 0;
+  // const onlinePercentage = totalDevices > 0 ? (onlineDevices / totalDevices) * 100 : 0;
 
   return (
     <div className="space-y-6">
